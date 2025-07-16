@@ -5,12 +5,12 @@ console.log('Starting Discord bot...');
 console.log('Token exists:', !!process.env.DISCORD_TOKEN);
 console.log('Token starts with:', process.env.DISCORD_TOKEN ? process.env.DISCORD_TOKEN.substring(0, 10) + '...' : 'MISSING');
 
-// Create a new client instance
+// Create a new client instance - REMOVED MessageContent intent
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent
+        GatewayIntentBits.GuildMessages
+        // MessageContent removed - this was causing the error
     ]
 });
 
@@ -39,7 +39,4 @@ process.on('unhandledRejection', (error) => {
 
 // Login to Discord with your bot token
 console.log('Attempting to login...');
-client.login(process.env.DISCORD_TOKEN).catch(error => {
-    console.error('Failed to login:', error);
-    process.exit(1);
-}); 
+client.login(process.env.DISCORD_TOKEN); 
