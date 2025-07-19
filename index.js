@@ -215,13 +215,24 @@ async function sendDiscordNotification(release) {
             timestamp: new Date()
         };
         
-        await channel.send({ embeds: [embed] });
+        // Add your friend's Discord ID here
+        const friendUserId = process.env.FRIEND_USER_ID; // Get this from Discord
+        
+        await channel.send({ 
+            content: `<@${friendUserId}> New music alert! 🎵`, 
+            embeds: [embed] 
+        });
+        
         console.log(`🔔 Notification sent for: ${release.artistName} - ${release.name}`);
         
     } catch (error) {
         console.error('❌ Error sending Discord notification:', error);
     }
 }
+
+// Add this near the top with other variables
+let isChecking = false;
+let lastCheckTime = 0;
 
 client.once('ready', async () => {
     console.log(`✅ Ready! Logged in as ${client.user.tag}`);
@@ -271,8 +282,30 @@ client.on('messageCreate', async (message) => {
     }
     
     if (message.content === '!check') {
+        const now = Date.now();
+        const cooldown = 30000; // 30 seconds
+        
+        if (isChecking) {
+            await message.reply('⏳ Already checking for releases, please wait...');
+            return;
+        }
+        
+        if (now - lastCheckTime < cooldown) {
+            const timeLeft = Math.ceil((cooldown - (now - lastCheckTime)) / 1000);
+            await message.reply(`⏰ Please wait ${timeLeft} seconds before checking again.`);
+            return;
+        }
+        
+        isChecking = true;
+        lastCheckTime = now;
+        
         await message.reply('🔍 Checking for new releases now...');
-        checkForNewReleases();
+        
+        try {
+            await checkForNewReleases();
+        } finally {
+            isChecking = false;
+        }
     }
     
     if (message.content === '!stats') {
