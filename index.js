@@ -1,8 +1,24 @@
-const { Client, GatewayIntentBits } = require('discord.js');
+const { Client, GatewayIntentBits, ActivityType } = require('discord.js');
 const express = require('express');
+const axios = require('axios');
+const cron = require('node-cron');
+const fs = require('fs').promises;
 require('dotenv').config();
 
-console.log('Starting Discord bot with health server...');
+console.log('Starting Discord bot with health server and music notifications...');
+
+// Spotify API variables
+let spotifyToken = null;
+let trackedArtists = new Set();
+
+// Discord bot setup FIRST
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent
+    ]
+});
 
 // Express server for Render health checks
 const app = express();
@@ -12,34 +28,231 @@ app.get('/', (req, res) => {
     res.json({ 
         status: 'Discord bot is running!', 
         bot: client.user ? client.user.tag : 'Not logged in yet',
+        artistsTracked: trackedArtists.size,
         timestamp: new Date() 
     });
 });
 
 app.get('/health', (req, res) => {
-    res.json({ 
-        status: 'healthy', 
+    const isReady = client.isReady();
+    res.status(isReady ? 200 : 503).json({ 
+        status: isReady ? 'healthy' : 'unhealthy', 
         uptime: process.uptime(),
-        servers: client.guilds ? client.guilds.cache.size : 0
+        servers: client.guilds ? client.guilds.cache.size : 0,
+        artistsTracked: trackedArtists.size,
+        botReady: isReady
     });
 });
 
-app.listen(PORT, () => {
-    console.log(`🌐 Health check server running on port ${PORT}`);
-});
+// Spotify functions
+async function getSpotifyToken() {
+    try {
+        const response = await axios.post('https://accounts.spotify.com/api/token', 
+            'grant_type=client_credentials', 
+            {
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Authorization': `Basic ${Buffer.from(`${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`).toString('base64')}`
+                }
+            }
+        );
+        
+        spotifyToken = response.data.access_token;
+        console.log('✅ Spotify token obtained');
+        return spotifyToken;
+    } catch (error) {
+        console.error('❌ Failed to get Spotify token:', error.response?.data || error.message);
+        return null;
+    }
+}
 
-// Discord bot setup
-const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent  // ← Now enabled in Discord Portal
-    ]
-});
+async function loadArtistsFromCSV() {
+    try {
+        const csvFiles = ['djentcore_n_beauty.csv', 'tiktok_live_songs.csv'];
+        
+        for (const fileName of csvFiles) {
+            try {
+                const csvData = await fs.readFile(fileName, 'utf-8');
+                const lines = csvData.split('\n');
+                
+                for (let i = 1; i < lines.length; i++) {
+                    const line = lines[i].trim();
+                    if (!line) continue;
+                    
+                    const columns = parseCSVLine(line);
+                    
+                    if (columns.length > 3) {
+                        const artistNames = columns[3];
+                        
+                        if (artistNames && artistNames !== 'undefined' && artistNames.trim()) {
+                            const artists = artistNames.split(',').map(name => name.trim());
+                            
+                            artists.forEach(artist => {
+                                if (artist && artist !== 'undefined') {
+                                    trackedArtists.add(artist);
+                                }
+                            });
+                        }
+                    }
+                }
+                
+                console.log(`✅ Loaded artists from ${fileName}`);
+            } catch (error) {
+                console.log(`⚠️ Could not read ${fileName}:`, error.message);
+            }
+        }
+        
+        console.log(`🎵 Total unique artists to track: ${trackedArtists.size}`);
+        
+    } catch (error) {
+        console.error('❌ Error loading artists:', error);
+    }
+}
 
-client.once('ready', () => {
+function parseCSVLine(line) {
+    const result = [];
+    let current = '';
+    let inQuotes = false;
+    
+    for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        
+        if (char === '"') {
+            inQuotes = !inQuotes;
+        } else if (char === ',' && !inQuotes) {
+            result.push(current.trim());
+            current = '';
+        } else {
+            current += char;
+        }
+    }
+    
+    result.push(current.trim());
+    return result;
+}
+
+async function checkForNewReleases() {
+    console.log('🔍 Checking for new releases...');
+    
+    if (!spotifyToken) {
+        await getSpotifyToken();
+    }
+    
+    // Check for releases in the last 3 days
+    const today = new Date();
+    const threeDaysAgo = new Date(today.getTime() - (3 * 24 * 60 * 60 * 1000));
+    
+    let newReleases = [];
+    let checkedCount = 0;
+    
+    for (const artistName of Array.from(trackedArtists).slice(0, 10)) { // Test with first 10 artists
+        try {
+            // Search for artist
+            const searchResponse = await axios.get(`https://api.spotify.com/v1/search`, {
+                headers: { 'Authorization': `Bearer ${spotifyToken}` },
+                params: { q: artistName, type: 'artist', limit: 1 }
+            });
+            
+            if (searchResponse.data.artists.items.length === 0) continue;
+            
+            const artistId = searchResponse.data.artists.items[0].id;
+            
+            // Get latest releases
+            const releasesResponse = await axios.get(`https://api.spotify.com/v1/artists/${artistId}/albums`, {
+                headers: { 'Authorization': `Bearer ${spotifyToken}` },
+                params: { include_groups: 'album,single', market: 'US', limit: 5 }
+            });
+            
+            // Check for recent releases
+            for (const album of releasesResponse.data.items) {
+                const releaseDate = new Date(album.release_date);
+                if (releaseDate >= threeDaysAgo) {
+                    newReleases.push({
+                        artistName: artistName,
+                        name: album.name,
+                        type: album.album_type,
+                        releaseDate: album.release_date,
+                        url: album.external_urls.spotify
+                    });
+                }
+            }
+            
+            checkedCount++;
+            await new Promise(resolve => setTimeout(resolve, 100)); // Rate limiting
+            
+        } catch (error) {
+            console.error(`❌ Error checking ${artistName}:`, error.message);
+        }
+    }
+    
+    console.log(`✅ Checked ${checkedCount} artists, found ${newReleases.length} new releases`);
+    
+    // Send notifications
+    for (const release of newReleases) {
+        await sendDiscordNotification(release);
+    }
+}
+
+async function sendDiscordNotification(release) {
+    try {
+        const channel = client.channels.cache.get(process.env.NOTIFICATION_CHANNEL_ID);
+        if (!channel) {
+            console.error('❌ Notification channel not found!');
+            return;
+        }
+        
+        const embed = {
+            color: 0x1DB954,
+            title: '🎵 **NEW RELEASE ALERT!** 🎵',
+            fields: [
+                { name: '🎤 Artist', value: release.artistName, inline: true },
+                { name: '🎶 Release', value: release.name, inline: true },
+                { name: '📀 Type', value: release.type.charAt(0).toUpperCase() + release.type.slice(1), inline: true },
+                { name: '📅 Released', value: release.releaseDate, inline: true },
+                { name: '🎧 Listen', value: `[Spotify Link](${release.url})`, inline: true }
+            ],
+            footer: { text: '🎸 Time to create that cover!' },
+            timestamp: new Date()
+        };
+        
+        await channel.send({ embeds: [embed] });
+        console.log(`🔔 Notification sent for: ${release.artistName} - ${release.name}`);
+        
+    } catch (error) {
+        console.error('❌ Error sending Discord notification:', error);
+    }
+}
+
+client.once('ready', async () => {
     console.log(`✅ Ready! Logged in as ${client.user.tag}`);
     console.log(`🏠 Bot is in ${client.guilds.cache.size} server(s)`);
+    
+    // Set bot presence
+    client.user.setPresence({
+        activities: [{ 
+            name: 'for new music releases', 
+            type: ActivityType.Watching 
+        }],
+        status: 'online',
+    });
+
+    // Start Express server after bot is ready
+    app.listen(PORT, () => {
+        console.log(`🌐 Health check server running on port ${PORT}`);
+    });
+    
+    // Load artists and get Spotify token
+    await loadArtistsFromCSV();
+    await getSpotifyToken();
+    
+    // Update presence with artist count
+    client.user.setPresence({
+        activities: [{ 
+            name: `${trackedArtists.size} artists for new music`, 
+            type: ActivityType.Watching 
+        }],
+        status: 'online',
+    });
 });
 
 client.on('messageCreate', async (message) => {
@@ -50,12 +263,26 @@ client.on('messageCreate', async (message) => {
     if (message.content === '!ping') {
         console.log('🏓 Ping command detected!');
         try {
-            await message.reply('Pong!');
+            await message.reply('Pong! 🎵');
             console.log('✅ Successfully replied!');
         } catch (error) {
             console.error('❌ Failed to reply:', error);
         }
     }
+    
+    if (message.content === '!check') {
+        await message.reply('🔍 Checking for new releases now...');
+        checkForNewReleases();
+    }
+    
+    if (message.content === '!stats') {
+        await message.reply(`📊 Currently tracking **${trackedArtists.size}** artists for new releases!`);
+    }
+});
+
+// Schedule checks every 4 hours
+cron.schedule('0 */4 * * *', () => {
+    checkForNewReleases();
 });
 
 // Error handling
