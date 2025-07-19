@@ -325,3 +325,18 @@ client.on('error', error => {
 
 console.log('🔐 Attempting to login...');
 client.login(process.env.DISCORD_TOKEN); 
+
+// Add this to your bot code (index.js)
+// Keep-alive ping every 10 minutes
+if (process.env.NODE_ENV === 'production') {
+    const RENDER_URL = process.env.RENDER_EXTERNAL_URL || 'https://discord-music-bot-8m2e.onrender.com';
+    
+    setInterval(async () => {
+        try {
+            await axios.get(`${RENDER_URL}/health`);
+            console.log('💓 Keep-alive ping sent');
+        } catch (error) {
+            console.log('❌ Keep-alive ping failed:', error.message);
+        }
+    }, 10 * 60 * 1000); // Every 10 minutes
+} 
