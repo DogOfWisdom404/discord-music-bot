@@ -141,7 +141,8 @@ async function checkForNewReleases() {
     // Check for releases in the last 7 days (increased from 3)
     const today = new Date();
     const sevenDaysAgo = new Date(today.getTime() - (7 * 24 * 60 * 60 * 1000));
-
+    
+    let newReleases = [];
     let checkedCount = 0;
     
     for (const artistName of trackedArtists) {
