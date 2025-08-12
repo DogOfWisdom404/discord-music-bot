@@ -11,6 +11,9 @@ console.log('Starting Discord bot with health server and music notifications...'
 let spotifyToken = null;
 let trackedArtists = new Set();
 
+let isChecking = false;
+let lastCheckTime = 0;
+
 // Discord bot setup FIRST
 const client = new Client({
     intents: [
