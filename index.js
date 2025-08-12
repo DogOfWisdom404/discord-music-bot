@@ -13,6 +13,7 @@ let trackedArtists = new Set();
 
 let isChecking = false;
 let lastCheckTime = 0;
+let lastFoundSongs = new Set();
 
 // Discord bot setup FIRST
 const client = new Client({
@@ -180,7 +181,8 @@ async function checkForNewReleases() {
                             name: album.name,
                             type: album.album_type,
                             releaseDate: album.release_date,
-                            url: album.external_urls.spotify
+                            url: album.external_urls.spotify,
+                            releaseId: releaseId
                         });
                     }
                 }
@@ -196,10 +198,18 @@ async function checkForNewReleases() {
     
     console.log(`✅ Checked ${checkedCount} artists, found ${newReleases.length} new releases`);
     
-    // Send notifications
-    for (const release of newReleases) {
+    // Filter out songs that were found in the last check
+    const trulyNewReleases = newReleases.filter(release => !lastFoundSongs.has(release.releaseId));
+    
+    // Send notifications only for truly new songs
+    for (const release of trulyNewReleases) {
         await sendDiscordNotification(release);
     }
+    
+    // Update memory with current songs for next check
+    lastFoundSongs = new Set(newReleases.map(release => release.releaseId));
+    
+    console.log(`🔔 Sent ${trulyNewReleases.length} notifications (${newReleases.length - trulyNewReleases.length} were duplicates from last check)`);
 }
 
 async function sendDiscordNotification(release) {
