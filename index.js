@@ -145,7 +145,7 @@ async function checkForNewReleases() {
     let newReleases = [];
     let checkedCount = 0;
     
-    for (const artistName of Array.from(trackedArtists).slice(0, 10)) { // Test with first 10 artists
+    for (const artistName of trackedArtists) {
         try {
             // Search for artist
             const searchResponse = await axios.get(`https://api.spotify.com/v1/search`, {
