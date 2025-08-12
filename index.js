@@ -229,10 +229,6 @@ async function sendDiscordNotification(release) {
     }
 }
 
-// Add this near the top with other variables
-let isChecking = false;
-let lastCheckTime = 0;
-let newReleases = [];
 
 client.once('ready', async () => {
     console.log(`✅ Ready! Logged in as ${client.user.tag}`);
@@ -270,7 +266,7 @@ client.on('messageCreate', async (message) => {
     console.log(`📨 Message: "${message.content}" from ${message.author.username} in ${message.guild?.name}`);
     
     if (message.author.bot) return;
-    if (message.guild?.id !== process.env.TARGET_GUILD_ID) return; // Only respond in your server
+    //if (message.guild?.id !== process.env.TARGET_GUILD_ID) return; // Only respond in your server
     
     if (message.content === '!ping') {
         console.log('🏓 Ping command detected!');
