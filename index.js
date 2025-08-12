@@ -147,6 +147,7 @@ async function checkForNewReleases() {
     
     let newReleases = [];
     let checkedCount = 0;
+    let seenReleases = new Set();
     
     for (const artistName of trackedArtists) {
         try {
@@ -169,13 +170,19 @@ async function checkForNewReleases() {
             for (const album of releasesResponse.data.items) {
                 const releaseDate = new Date(album.release_date);
                 if (releaseDate >= sevenDaysAgo) {
-                    newReleases.push({
-                        artistName: artistName,
-                        name: album.name,
-                        type: album.album_type,
-                        releaseDate: album.release_date,
-                        url: album.external_urls.spotify
-                    });
+                    // Create unique identifier to prevent duplicates
+                    const releaseId = `${artistName.toLowerCase()}-${album.name.toLowerCase()}-${album.release_date}`;
+                    
+                    if (!seenReleases.has(releaseId)) {
+                        seenReleases.add(releaseId);
+                        newReleases.push({
+                            artistName: artistName,
+                            name: album.name,
+                            type: album.album_type,
+                            releaseDate: album.release_date,
+                            url: album.external_urls.spotify
+                        });
+                    }
                 }
             }
             
