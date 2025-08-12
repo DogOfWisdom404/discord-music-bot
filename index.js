@@ -138,11 +138,10 @@ async function checkForNewReleases() {
         await getSpotifyToken();
     }
     
-    // Check for releases in the last 3 days
+    // Check for releases in the last 7 days (increased from 3)
     const today = new Date();
-    const threeDaysAgo = new Date(today.getTime() - (3 * 24 * 60 * 60 * 1000));
-    
-    let newReleases = [];
+    const sevenDaysAgo = new Date(today.getTime() - (7 * 24 * 60 * 60 * 1000));
+
     let checkedCount = 0;
     
     for (const artistName of trackedArtists) {
@@ -157,16 +156,15 @@ async function checkForNewReleases() {
             
             const artistId = searchResponse.data.artists.items[0].id;
             
-            // Get latest releases
+                    // Get latest releases
             const releasesResponse = await axios.get(`https://api.spotify.com/v1/artists/${artistId}/albums`, {
                 headers: { 'Authorization': `Bearer ${spotifyToken}` },
-                params: { include_groups: 'album,single', market: 'US', limit: 5 }
+                params: { include_groups: 'album,single,compilation', limit: 20 }
             });
-            
             // Check for recent releases
             for (const album of releasesResponse.data.items) {
                 const releaseDate = new Date(album.release_date);
-                if (releaseDate >= threeDaysAgo) {
+                if (releaseDate >= sevenDaysAgo) {
                     newReleases.push({
                         artistName: artistName,
                         name: album.name,
